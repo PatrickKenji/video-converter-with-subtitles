@@ -10,6 +10,7 @@ A modern, user-friendly video converter with queue support, quality selection, a
 - Progress bar and status for each file
 - Modern dark UI
 - **Subtitle selection and burn-in** (choose which subtitle to burn into the video)
+- **Audio track selection** (choose which audio track to use in the output)
 
 ## Requirements
 - Python 3.8+
@@ -56,7 +57,10 @@ python conversor_video.py
 
 ## How to Use
 1. Add your video files to the queue.
-2. (Optional) **To select and burn a subtitle:** Double-click a video in the list. A window will appear showing all available subtitles in the file. Select the desired subtitle and click "Selecionar". The chosen subtitle will be burned into the video during conversion.
+2. (Optional) **To select and burn a subtitle or choose an audio track:** Double-click a video in the list. A window will appear with three buttons: **LEGENDA**, **AUDIO** e **CANCELAR**.
+   - Clique em **LEGENDA** para escolher qual legenda será queimada no vídeo.
+   - Clique em **AUDIO** para escolher qual faixa de áudio será usada na conversão.
+   - Clique em **CANCELAR** para fechar a janela sem selecionar nada.
 3. Choose output format, quality, and output folder.
 4. Click "Iniciar Conversão" to start.
 
@@ -66,11 +70,16 @@ python conversor_video.py
 - The selected subtitle will be permanently burned into the output video (burn-in), making it always visible and not removable.
 - If you do not select a subtitle, the video will be converted without burning any subtitle.
 
+## Audio Tracks (Faixas de Áudio)
+- The app detects all audio tracks in your video files.
+- You can select which audio track to use in the output by double-clicking the video and clicking **AUDIO**.
+- If you do not select an audio track, the first audio track will be used by default.
+
 ## Troubleshooting
 - If you get an error about FFmpeg not found, make sure it is installed and the `bin` folder is in your PATH.
 - For hardware acceleration, ensure you have the latest drivers for your GPU and a compatible FFmpeg build.
 - If output videos only play in VLC, make sure you are using the latest version of this app (it now enforces maximum compatibility for MP4).
-- If you have issues with subtitles not appearing, make sure the video file actually contains embedded subtitles and that you selected the correct one.
+- If you have issues with subtitles or audio tracks not appearing, make sure the video file actually contains embedded subtitles or multiple audio tracks and that you selected the correct one.
 
 ---
 

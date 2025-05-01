@@ -96,6 +96,30 @@ def get_video_subtitles(path):
         print(f"Erro ao detectar legendas: {e}")
         return []
 
+def get_video_audios(path):
+    """Retorna as faixas de áudio disponíveis no vídeo usando ffprobe."""
+    try:
+        result = subprocess.run([
+            'ffprobe', '-v', 'error', '-select_streams', 'a',
+            '-show_entries', 'stream=index:stream_tags=language,title',
+            '-of', 'json', path
+        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        
+        audios = []
+        data = json.loads(result.stdout)
+        if 'streams' in data:
+            for i, stream in enumerate(data['streams']):
+                audio = {
+                    'index': i,  # índice da lista, igual ao que o ffmpeg espera
+                    'language': stream.get('tags', {}).get('language', 'Unknown'),
+                    'title': stream.get('tags', {}).get('title', '')
+                }
+                audios.append(audio)
+        return audios
+    except Exception as e:
+        print(f"Erro ao detectar áudios: {e}")
+        return []
+
 class ConversorVideo:
     def __init__(self, root):
         self.root = root
@@ -147,6 +171,7 @@ class ConversorVideo:
         self.video_atual = ""
         self.process = None
         self.subtitle_selection = {}  # Dictionary to store selected subtitles for each video
+        self.audio_selection = {}  # Dicionário para faixa de áudio selecionada
         
         # Detectar hardware acceleration disponível
         self.hw_accel = self.detectar_hardware_acceleration()
@@ -202,18 +227,20 @@ class ConversorVideo:
         frame_tree.pack(fill='both', expand=True)
         
         # Treeview para mostrar a fila de vídeos
-        colunas = ("arquivo", "status", "legenda")
+        colunas = ("arquivo", "status", "legenda", "audio")
         self.tree = ttk.Treeview(frame_tree, columns=colunas, show="headings", style="Dark.Treeview")
         self.tree.heading("arquivo", text="Arquivo")
         self.tree.heading("status", text="Status")
         self.tree.heading("legenda", text="Legenda")
+        self.tree.heading("audio", text="Áudio")
         self.tree.column("arquivo", width=300)
         self.tree.column("status", width=150)
         self.tree.column("legenda", width=150)
+        self.tree.column("audio", width=150)
         self.tree.pack(side='left', fill='both', expand=True)
         
-        # Adicionar evento de duplo clique para selecionar legenda
-        self.tree.bind("<Double-1>", self.selecionar_legenda)
+        # Adicionar evento de duplo clique para selecionar legenda ou áudio
+        self.tree.bind("<Double-1>", self.selecionar_legenda_ou_audio)
         
         # Scrollbar para a treeview
         scrollbar = ttk.Scrollbar(frame_tree, orient="vertical", command=self.tree.yview)
@@ -280,9 +307,10 @@ class ConversorVideo:
                     "status": "Na fila"
                 })
                 # Adicionar à treeview
-                self.tree.insert("", "end", values=(os.path.basename(arquivo), "Na fila", "Sem legenda"))
-                # Inicializar sem legenda selecionada
+                self.tree.insert("", "end", values=(os.path.basename(arquivo), "Na fila", "Sem legenda", "Padrão"))
+                # Inicializar sem legenda/áudio selecionados
                 self.subtitle_selection[arquivo] = None
+                self.audio_selection[arquivo] = None
                 
     def selecionar_pasta_saida(self):
         pasta = filedialog.askdirectory(title="Selecione a pasta de saída")
@@ -339,60 +367,101 @@ class ConversorVideo:
             self.progress_bar["value"] = 0
             self.lbl_progresso.config(text="")
 
-    def selecionar_legenda(self, event):
+    def selecionar_legenda_ou_audio(self, event):
         item = self.tree.selection()[0]
         index = self.tree.index(item)
         video_path = self.fila_videos[index]["caminho"]
-        
-        # Obter legendas disponíveis
+        # Nova janela de escolha
+        escolha_window = tk.Toplevel(self.root)
+        escolha_window.title("Seleção de faixa")
+        escolha_window.geometry("350x180")
+        escolha_window.configure(bg="#1e1e1e")
+        label = tk.Label(escolha_window, text="O que deseja selecionar?", bg="#1e1e1e", fg="white", font=("Ubuntu", 12, "bold"))
+        label.pack(pady=(15, 10))
+        frame_botoes = tk.Frame(escolha_window, bg="#1e1e1e")
+        frame_botoes.pack(pady=5)
+        def acao_legenda():
+            escolha_window.destroy()
+            self.selecionar_legenda_custom(item, video_path)
+        def acao_audio():
+            escolha_window.destroy()
+            self.selecionar_audio(item, video_path)
+        def acao_cancelar():
+            escolha_window.destroy()
+        btn_legenda = RoundedButton(frame_botoes, "LEGENDA", command=acao_legenda, width=100, height=40)
+        btn_legenda.pack(side='left', padx=10)
+        btn_audio = RoundedButton(frame_botoes, "AUDIO", command=acao_audio, width=100, height=40)
+        btn_audio.pack(side='left', padx=10)
+        # Botão cancelar centralizado abaixo
+        btn_cancelar = RoundedButton(escolha_window, "CANCELAR", command=acao_cancelar, width=220, height=40)
+        btn_cancelar.pack(pady=(15, 10))
+
+    def selecionar_legenda_custom(self, item, video_path):
         subtitles = get_video_subtitles(video_path)
-        
         if not subtitles:
             messagebox.showinfo("Legendas", "Nenhuma legenda encontrada neste vídeo.")
             return
-        
-        # Criar janela de seleção de legenda
         subtitle_window = tk.Toplevel(self.root)
         subtitle_window.title("Selecionar Legenda")
         subtitle_window.geometry("400x300")
         subtitle_window.configure(bg="#1e1e1e")
-        
-        # Lista de legendas
         subtitle_list = tk.Listbox(subtitle_window, bg="#2b2b2b", fg="white", font=("Ubuntu", 10))
         subtitle_list.pack(fill='both', expand=True, padx=10, pady=10)
-        
-        # Adicionar opção "Sem legenda"
         subtitle_list.insert(0, "Sem legenda")
-        
-        # Adicionar legendas disponíveis
         for i, sub in enumerate(subtitles):
             display_text = f"{sub['language']}"
             if sub['title']:
                 display_text += f" - {sub['title']}"
             subtitle_list.insert(tk.END, display_text)
-        
         def on_select():
             selection = subtitle_list.curselection()
             if selection:
                 selected_index = selection[0]
-                if selected_index == 0:  # "Sem legenda"
+                if selected_index == 0:
                     self.subtitle_selection[video_path] = None
                     self.tree.set(item, "legenda", "Sem legenda")
                 else:
-                    # Salvar o índice da lista, não o stream['index']
                     self.subtitle_selection[video_path] = selected_index - 1
                     self.tree.set(item, "legenda", f"Legenda {selected_index - 1}")
             subtitle_window.destroy()
-        
-        # Botão de seleção
         btn_select = RoundedButton(subtitle_window, "Selecionar", command=on_select, width=150, height=40)
+        btn_select.pack(pady=10)
+
+    def selecionar_audio(self, item, video_path):
+        audios = get_video_audios(video_path)
+        if not audios:
+            messagebox.showinfo("Áudio", "Nenhuma faixa de áudio encontrada neste vídeo.")
+            return
+        audio_window = tk.Toplevel(self.root)
+        audio_window.title("Selecionar Áudio")
+        audio_window.geometry("400x300")
+        audio_window.configure(bg="#1e1e1e")
+        audio_list = tk.Listbox(audio_window, bg="#2b2b2b", fg="white", font=("Ubuntu", 10))
+        audio_list.pack(fill='both', expand=True, padx=10, pady=10)
+        audio_list.insert(0, "Padrão")
+        for i, audio in enumerate(audios):
+            display_text = f"{audio['language']}"
+            if audio['title']:
+                display_text += f" - {audio['title']}"
+            audio_list.insert(tk.END, display_text)
+        def on_select():
+            selection = audio_list.curselection()
+            if selection:
+                selected_index = selection[0]
+                if selected_index == 0:
+                    self.audio_selection[video_path] = None
+                    self.tree.set(item, "audio", "Padrão")
+                else:
+                    self.audio_selection[video_path] = selected_index - 1
+                    self.tree.set(item, "audio", f"Áudio {selected_index - 1}")
+            audio_window.destroy()
+        btn_select = RoundedButton(audio_window, "Selecionar", command=on_select, width=150, height=40)
         btn_select.pack(pady=10)
 
     def converter_video(self, index):
         if not self.caminho_saida.get():
             messagebox.showerror("Erro", "Por favor, selecione a pasta de saída")
             return
-            
         video_info = self.fila_videos[index]
         try:
             self.atualizar_status(index, "Convertendo...")
@@ -404,7 +473,6 @@ class ConversorVideo:
             caminho_completo = os.path.join(pasta_saida, f"{nome_arquivo}.{self.formato_saida.get()}").replace('\\', '/').replace('\\', '/')
             v_bitrate, a_bitrate = self.get_bitrates()
             duracao = get_video_duration(video_info["caminho"])
-
             def run_ffmpeg(cmd):
                 print('Comando FFmpeg:', ' '.join(cmd))
                 if sys.platform == "win32":
@@ -442,26 +510,25 @@ class ConversorVideo:
                             continue
                 self.process.wait()
                 return ffmpeg_output
-
-            # Primeira tentativa: usar NVENC se disponível
             cmd = ['ffmpeg', '-y', '-i', video_info["caminho"]]
             nvenc_usado = False
-            
-            # Adicionar filtro de subtítulos se uma legenda foi selecionada
+            # Filtro de legenda (burn-in)
             if video_info["caminho"] in self.subtitle_selection and self.subtitle_selection[video_info["caminho"]] is not None:
                 subtitle_index = self.subtitle_selection[video_info["caminho"]]
-                # Escapar caminho para o filtro subtitles (Windows)
                 video_path_escaped = video_info["caminho"].replace('\\', '/').replace(':', '\\:')
-                # Colocar entre aspas simples se houver espaço
                 if ' ' in video_path_escaped:
                     video_path_escaped = f"'{video_path_escaped}'"
-                # Verificar se há mais de uma legenda
                 subtitles = get_video_subtitles(video_info["caminho"])
                 if len(subtitles) > 1:
                     cmd.extend(['-vf', f"subtitles={video_path_escaped}:si={subtitle_index}"])
                 else:
                     cmd.extend(['-vf', f"subtitles={video_path_escaped}"])
-            
+            # Seleção de faixa de áudio
+            if video_info["caminho"] in self.audio_selection and self.audio_selection[video_info["caminho"]] is not None:
+                audio_index = self.audio_selection[video_info["caminho"]]
+                cmd.extend(['-map', '0:v:0', '-map', f'0:a:{audio_index}'])
+            else:
+                cmd.extend(['-map', '0:v:0', '-map', '0:a:0'])
             if self.hw_accel == 'nvenc':
                 cmd.extend(['-c:v', 'h264_nvenc', '-preset', 'p1'])
                 nvenc_usado = True
@@ -469,8 +536,6 @@ class ConversorVideo:
                 cmd.extend(['-vaapi_device', '/dev/dri/renderD128', '-c:v', 'h264_vaapi'])
             else:
                 cmd.extend(['-c:v', 'libx264', '-preset', 'ultrafast'])
-            
-            # Parâmetros de compatibilidade
             cmd.extend([
                 '-profile:v', 'high',
                 '-level', '4.1',
@@ -484,19 +549,14 @@ class ConversorVideo:
                 caminho_completo
             ])
             ffmpeg_output = run_ffmpeg(cmd)
-
-            # Se NVENC foi usado e falhou, tenta fallback para libx264
+            # Fallback para libx264 se NVENC falhar
             if nvenc_usado and (not os.path.exists(caminho_completo) or os.path.getsize(caminho_completo) == 0 or any('h264_nvenc' in l and ('error' in l.lower() or 'not supported' in l.lower() or 'no capable devices' in l.lower()) for l in ffmpeg_output)):
-                # Remove arquivo vazio/corrompido
                 if os.path.exists(caminho_completo):
                     try:
                         os.remove(caminho_completo)
                     except:
                         pass
-                # Tenta novamente com libx264 (sem popup)
                 cmd2 = ['ffmpeg', '-y', '-i', video_info["caminho"]]
-                
-                # Adicionar filtro de subtítulos novamente
                 if video_info["caminho"] in self.subtitle_selection and self.subtitle_selection[video_info["caminho"]] is not None:
                     subtitle_index = self.subtitle_selection[video_info["caminho"]]
                     video_path_escaped = video_info["caminho"].replace('\\', '/').replace(':', '\\:')
@@ -507,12 +567,15 @@ class ConversorVideo:
                         cmd2.extend(['-vf', f"subtitles={video_path_escaped}:si={subtitle_index}"])
                     else:
                         cmd2.extend(['-vf', f"subtitles={video_path_escaped}"])
-                
+                if video_info["caminho"] in self.audio_selection and self.audio_selection[video_info["caminho"]] is not None:
+                    audio_index = self.audio_selection[video_info["caminho"]]
+                    cmd2.extend(['-map', '0:v:0', '-map', f'0:a:{audio_index}'])
+                else:
+                    cmd2.extend(['-map', '0:v:0', '-map', '0:a:0'])
                 cmd2.extend(['-c:v', 'libx264', '-preset', 'ultrafast',
                         '-profile:v', 'high', '-level', '4.1', '-pix_fmt', 'yuv420p', '-g', '48',
                         '-b:v', v_bitrate, '-c:a', 'aac', '-b:a', a_bitrate, '-movflags', '+faststart', '-progress', 'pipe:1', caminho_completo])
                 ffmpeg_output = run_ffmpeg(cmd2)
-
             if not self.parar_conversao:
                 if os.path.exists(caminho_completo) and os.path.getsize(caminho_completo) > 0:
                     self.progress_bar["value"] = 100
