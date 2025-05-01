@@ -1,0 +1,6 @@
+# requirements.txt
+# Only standard Python libraries are used (tkinter, threading, subprocess, etc.)
+# If you want to ensure Python 3.8+ is used, you can specify:
+# python_version >= 3.8
+
+# No external packages required 
